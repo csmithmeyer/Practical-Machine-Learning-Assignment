@@ -1,0 +1,129 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Colby Smithmeyer"
+date: "May 27, 2019"
+output: html_document
+---
+
+## Executive Summary
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). (Taken from http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har#weight_lifting_exercises)
+
+This report will detail the analysis performed to predict, based on a number of variables, the method (A, B, C, D, or E) used to perform the exercise.  Specifically this analysis will use Classfication Tree, Random Forest, and Gradient Boosting Models for prediction. 
+
+Overall the Random Forest model yieled the most accurated result on the training data set.  It had an accuracy of 99.3%, compared to the Classification Tree (50%), and the Gradient Boosting Model (96.8%).
+
+## Reading and Cleaning the Data
+
+Here we simply read in the testing and training data sets.
+```{r echo=F}
+path<-"C:/Users/colby/Desktop/coursera/Practical Machine Learning/"
+
+setwd(path)
+
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = paste0(path,"training.csv"))
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile=paste0(path,"testing.csv"))
+
+testing<-read.csv("testing.csv")
+training<-read.csv("training.csv")
+
+library(knitr)
+library(caret)
+library(rpart)
+library(rattle)
+library(randomForest)
+library(corrplot)
+```
+
+Now we must clean the data sets by removing the columns with blank entries or NA entries of atleast 70%.  Additionally we will partition the training set into a training and test set for cross validation of the models.
+
+```{r}
+training<-training[,-(which(colSums(is.na(training)|training=="")/nrow(training)>=.7))]
+training<-training[,-c(1:7)]
+
+#Now we perform the same for the test data set
+testing<-testing[,-(which(colSums(is.na(testing)|testing=="")/nrow(testing)>=.7))]
+testing<-testing[,-c(1:7)]
+
+#Now we will partition the training set
+set.seed(1434)
+inTrain1 <- createDataPartition(training$classe, p=0.75, list=FALSE)
+train1 <- training[inTrain1,]
+test1 <- training[-inTrain1,]
+```
+
+## Classificaion Trees
+Now we will use classification tree method to create a prediction model.
+
+```{r}
+trControl <- trainControl(method="cv", number=5)
+model_CT <- train(classe~., data=train1, method="rpart", trControl=trControl)
+
+fancyRpartPlot(model_CT$finalModel)
+
+trainpred <- predict(model_CT,newdata=test1)
+
+confMatCT <- confusionMatrix(test1$classe,trainpred)
+
+confMatCT$table
+confMatCT$overall[1]
+```
+As you can see the accuracy is on 50%.  This will not be a very useful model for predicting.
+
+## Random Forest
+Now we will use the random forest method to create a prediction model.
+
+```{r}
+model_RF <- train(classe~., data=train1, method="rf", trControl=trControl, verbose=FALSE)
+print(model_RF)
+
+plot(model_RF,main="Model Accuracy vs. # of Predictors")
+#As you can see the best model was mtry 2 with an accuracy of 99.3%
+
+trainpred <- predict(model_RF,newdata=test1)
+
+confMatRF <- confusionMatrix(test1$classe,trainpred)
+
+# display confusion matrix and model accuracy
+confMatRF$table
+confMatRF$overall[1]
+#Display the variable used in the final model
+names(model_RF$finalModel)
+
+plot(model_RF$finalModel,main="Model error of Random forest model by number of trees")
+
+varImp(model_RF)
+```
+As you can see the accuracy of the final model is 99.3%.  This will be a useful model in predicting the classe variable. 
+
+## Gradient Boosting Method
+Finally we will use the gradient boosting method to build the final model.
+
+```{r}
+model_GBM <- train(classe~., data=train1, method="gbm", trControl=trControl, verbose=FALSE)
+print(model_GBM)
+
+# As you can see the best model yields an accuracy of 96%.
+plot(model_GBM)
+
+trainpred <- predict(model_GBM,newdata=test1)
+
+confMatGBM <- confusionMatrix(test1$classe,trainpred)
+confMatGBM$table
+confMatGBM$overall[1]
+```
+As you can see this model has an accuracy of 96.8%, slightly worse than the random forest method.
+
+## Conclusion
+We will use each model to predict the final test set.
+
+```{r}
+FinalTestPred_CT <- predict(model_CT,newdata=testing)
+FinalTestPred_RF <- predict(model_RF,newdata=testing)
+FinalTestPred_GBM <- predict(model_GBM,newdata=testing)
+
+FinalTestPred_CT
+FinalTestPred_RF
+FinalTestPred_GBM
+```
+Since the Random Forest model is the most accurate we would want to use its prediction, but it is interesting to note that the Random Forest and Gradient Boosting Method yielded the same prediction.  Given the low accuracy of the Classification Tree method we should not use it to predict.  If we had the classe variables of the test set we could test for the out of sample error of each model.  
